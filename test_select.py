@@ -9,11 +9,12 @@ class TestSelect(nn.Module):
         self.topk=topk
         self.num_classes=num_classes
         self.min_size=min_size
-    def feature_for_forward(self,box,cls,center,point):
+    def feature_for_forward(self,box,cls,center,point,revise):
         n,c,h,w=cls.shape
         cls=cls.view(n,c,h,w).permute(0,2,3,1).reshape(n,-1,c).sigmoid()
         box=box.view(n,4,h,w).permute(0,2,3,1).reshape(n,-1,4)
         center=center.view(n,1,h,w).permute(0,2,3,1).reshape(n,-1).sigmoid()
+        revise=revise.reshape(n,-1,2)
 
         candidates_inds=cls>self.overshold
         pre_nms_topk=candidates_inds.view(n,-1).sum(1)
@@ -31,6 +32,8 @@ class TestSelect(nn.Module):
             per_box=box[i]
             per_box=per_box[per_candidate_loc]##获取得分大于阈值的定位预测
             point=point[per_candidate_loc]##获取得分大于阈值的中心点候选
+            rev=revise[i][per_candidate_loc]
+            point=point+rev
 
             per_candidate_class=per_candidate_nonzero[:,1]+1###分类得分大于阈值的类别
             per_pre_nms_topk=pre_nms_topk[i]
@@ -47,10 +50,10 @@ class TestSelect(nn.Module):
                 ],dim=1)
             results.append([detections,per_candidate_class,per_cls])
         return results
-    def forward(self,box,cls,center,points):
+    def forward(self,box,cls,center,points,revise):
         sample_boxes=[]
-        for i,(b,l,c,p) in enumerate(zip(box,cls,center,points)):
-            sample_boxes.append(self.feature_for_forward(b,l,c,p))
+        for i,(b,l,c,p) in enumerate(zip(box,cls,center,points,revise)):
+            sample_boxes.append(self.feature_for_forward(b,l,c,p,r))
         
         return sample_boxes
 

@@ -1,20 +1,22 @@
 import torch.nn as nn
 import numpy as np
-from fcos import FCOSModule
+from revise import CenterModule
 from resnet50 import ResNet50
 from fpns import FPNs
 import torch
-from fcos_loss import FCOSLoss
+from center_loss import FCOSLoss
 from test_select import TestSelect
+from utils import EncoderDecoder
 class Detect(nn.Module):
-    def __init__(self,in_channels,nums,classes,fpn_strides,layers=[3,4,6,3],overshold=0.5,topk=100,train=True,min_size=32):
+    def __init__(self,in_channels,nums,classes,fpn_strides,encoder_decoder_levels=3,layers=[3,4,6,3],overshold=0.5,topk=100,train=True,min_size=32):
         super(Detect,self).__init__()
         self.backbone=ResNet50(layers)##resnet50基本网络
         self.fpn=FPNs()##根据基本网络构建fpns
-        self.head=FCOSModule(in_channels,nums,classes)##fcos的检测器头部
+        self.head=CenterModule(in_channels,nums,classes)##fcos的检测器头部
         self.fpn_strides=fpn_strides##构建中心先验的步长
         self.train=train
         self.loss=FCOSLoss(0.45)##训练时的损失
+        self.encoder_decoder=EncoderDecoder(in_chnnels,out_channels,encoder_decoder_levels)
         self.select=TestSelect(overshold,topk,min_size,num_classes)
         ##测试时根据先验候选中心locations以及预测的四个边距得到预测结果
 
@@ -34,11 +36,12 @@ class Detect(nn.Module):
     def forward(self,x,targets=None):
         features=self.backbone(x)
         features=self.fpn(features)
-        box,cls,center=self.head(features)
+        features=self.encoder_decoder(features)
+        box,cls,center,revise=self.head(features)
         locations=self.createPrior(features)
         if self.train:
-            cls_loss,reg_loss,center_loss=self.loss(features,cls,box,center,targets)
+            cls_loss,reg_loss,center_loss=self.loss(features,cls,box,center,revise,targets)
             return {"cls_loss":cls_loss,"reg_loss":reg_loss,"center_loss":center_loss}
         else:
-            return self.select(box,cls,center,locations)
+            return self.select(box,cls,center,locations,revise)
 
